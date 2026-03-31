@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Barge Mission Control | Elite v3.5</title>
+    <style>
+        :root {
+            --bg: #0b1120; --card: #1e293b; --accent: #38bdf8;
+            --wind: #f87171; --swell: #60a5fa; --vessel: #22c55e;
+            --danger: #ef4444; --text: #f8fafc; --border: #334155;
+            --warn: #fbbf24; --glow: rgba(56, 189, 248, 0.15);
+        }
+
+        * { user-select: none; -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+
+        body { 
+            font-family: 'Inter', system-ui, sans-serif; 
+            background: var(--bg); color: var(--text); 
+            margin: 0; display: flex; flex-direction: column; align-items: center; 
+            overflow-x: hidden; overflow-y: auto; min-height: 100vh;
+        }
+
+        /* --- HEADER & STATUS --- */
+        .alert-system { width: 100%; position: sticky; top: 0; z-index: 1000; display: flex; flex-direction: column; box-shadow: 0 4px 20px rgba(0,0,0,0.6); }
+        .status-bar { width: 100%; padding: 14px; text-align: center; font-weight: 900; text-transform: uppercase; border-bottom: 1px solid rgba(255,255,255,0.1); transition: 0.3s; font-size: 0.85rem; letter-spacing: 0.5px; }
+        
+        .bg-safe { background: #064e3b; color: #6ee7b7; border-left: 8px solid #10b981; }
+        .bg-warning { background: #78350f; color: #fcd34d; border-left: 8px solid var(--warn); }
+        .bg-danger { background: #7f1d1d; color: #fca5a5; border-left: 8px solid var(--danger); }
+        .bg-nodata { background: #334155; color: #94a3b8; }
+
+        /* --- RESPONSIVE CONSOLE --- */
+        .console { width: 100%; background: #000; border-bottom: 1px solid var(--border); }
+        .row { display: flex; border-bottom: 1px solid #1e293b; }
+        .label { min-width: 125px; padding: 10px; font-size: 0.65rem; font-weight: 900; color: #94a3b8; background: #0f172a; display: flex; align-items: center; justify-content: center; text-align: center; border-right: 1px solid var(--border); text-transform: uppercase; }
+        .btn-grid { display: flex; flex: 1; }
+        .btn { flex: 1; padding: 14px 5px; background: transparent; border: none; color: #cbd5e1; font-weight: 800; font-size: 0.65rem; cursor: pointer; border-right: 1px solid #1e293b; transition: 0.2s; text-transform: uppercase; }
+        .btn.active { color: var(--accent); background: rgba(56, 189, 248, 0.15); box-shadow: inset 0 -4px 0 var(--accent); }
+
+        @media (max-width: 768px) {
+            .row { flex-direction: column; }
+            .label { width: 100%; border-right: none; border-bottom: 1px solid var(--border); background: #111827; }
+            .btn-grid { display: grid; grid-template-columns: repeat(2, 1fr); }
+            .row:nth-child(2) .btn-grid, .row:nth-child(3) .btn-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+
+        /* --- DASHBOARD --- */
+        .dashboard { display: grid; grid-template-columns: 1fr; gap: 20px; padding: 20px; width: 95%; max-width: 1400px; }
+        @media (min-width: 1100px) { .dashboard { grid-template-columns: 340px 1fr 340px; align-items: center; } }
+        
+        .card { background: var(--card); border-radius: 12px; padding: 20px; border: 1px solid var(--border); box-shadow: 0 10px 25px rgba(0,0,0,0.4); }
+        .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .full { grid-column: span 2; }
+        .card label { font-size: 0.65rem; color: #64748b; font-weight: 800; margin-bottom: 4px; text-transform: uppercase; display: block; }
+        .card input { background: #0f172a; border: 1px solid var(--border); color: var(--accent); padding: 10px; border-radius: 6px; font-size: 1.2rem; font-weight: 900; width: 100%; text-align: center; outline: none; }
+        .rel-box { margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; text-align: center; font-size: 0.85rem; font-weight: 800; }
+
+        /* --- RADAR HUD --- */
+        .plot-container { 
+            position: relative; aspect-ratio: 1/1; 
+            background: radial-gradient(circle, #1e293b 0%, #0b1120 100%); 
+            border-radius: 50%; border: 4px solid var(--border); 
+            display: flex; justify-content: center; align-items: center; 
+            width: 100%; max-width: 460px; margin: 0 auto; 
+            box-shadow: 0 0 40px rgba(0,0,0,0.7), inset 0 0 60px rgba(0,0,0,0.5);
+            touch-action: none; 
+        }
+        .plot-container::after {
+            content: ''; position: absolute; width: 100%; height: 100%;
+            border-radius: 50%; background: conic-gradient(from 0deg, var(--glow) 0deg, transparent 60deg);
+            animation: scan 5s linear infinite; pointer-events: none;
+        }
+        @keyframes scan { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        .ticks { position: absolute; width: 100%; height: 100%; border-radius: 50%; pointer-events: none; background: repeating-conic-gradient(from 0deg, var(--border) 0deg 1deg, transparent 1deg 10deg); -webkit-mask-image: radial-gradient(circle, transparent 94%, black 95%); }
+        .cardinal { position: absolute; font-weight: 900; font-size: 1.1rem; color: #475569; pointer-events: none; z-index: 20; }
+        .n { top: 15px; color: var(--accent); } .s { bottom: 15px; } .e { right: 15px; } .w { left: 15px; }
+
+        /* --- HANDLES --- */
+        .track { position: absolute; width: 100%; height: 100%; pointer-events: none; z-index: 100; }
+        .hdg-grab { position: absolute; top: 0; left: 50%; transform: translate(-50%, -10px); width: 35px; height: 35px; background: var(--vessel); clip-path: polygon(50% 0%, 0% 100%, 100% 100%); cursor: grab; pointer-events: auto; filter: drop-shadow(0 0 5px var(--vessel)); }
+        .weather-handle { position: absolute; top: 0; left: 50%; transform: translate(-50%, -100%); width: 50px; height: 60px; cursor: grab; pointer-events: auto; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
+        .marker-label { font-size: 0.6rem; font-weight: 900; text-transform: uppercase; background: #000; padding: 2px 5px; border-radius: 3px; margin-bottom: 2px; border: 1px solid rgba(255,255,255,0.1); }
+        .arrow-down { width: 0; height: 0; border-left: 12px solid transparent; border-right: 12px solid transparent; border-top: 18px solid currentColor; filter: drop-shadow(0 0 5px currentColor); }
+
+        /* --- BARGE --- */
+        #v-group { position: absolute; width: 75px; height: 180px; pointer-events: none; z-index: 40; }
+        .barge-hull { width: 100%; height: 100%; background: linear-gradient(90deg, #1e293b 0%, #475569 50%, #1e293b 100%); border: 2px solid #fff; border-radius: 40px 40px 5px 5px; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 30px rgba(0,0,0,0.8); }
+
+        /* --- CENTERED FOOTER --- */
+        .footer { padding: 40px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; width: 100%; }
+        #in-h { 
+            width: 100%; max-width: 350px; font-size: 5rem; border: none; background: transparent; 
+            color: var(--vessel); font-weight: 950; outline: none; text-align: center; 
+            margin: 0 auto; display: block;
+        }
+        .ref-sheet-btn { background: #334155; color: white; padding: 18px 35px; border: 1px solid var(--border); border-radius: 8px; font-weight: 800; cursor: pointer; text-transform: uppercase; margin-top: 10px; width: 100%; max-width: 400px; }
+        
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); z-index: 2000; display: none; padding: 20px; overflow-y: auto; }
+        .ref-table { width: 100%; border-collapse: collapse; margin-top: 10px; background: #000; color: #cbd5e1; font-size: 0.7rem; border: 1px solid var(--border); }
+        .ref-table th, .ref-table td { border: 1px solid var(--border); padding: 8px; text-align: center; }
+        .ref-table th { background: #0f172a; color: var(--accent); }
+    </style>
+</head>
+<body>
+
+<div class="alert-system">
+    <div id="v-bar" class="status-bar bg-nodata">MOORING: ANALYZING</div>
+    <div id="s-bar" class="status-bar bg-nodata">SPUDS: ANALYZING</div>
+</div>
+
+<div class="console">
+    <div class="row">
+        <div class="label">Mooring Set</div>
+        <div class="btn-grid">
+            <button class="btn active" onclick="setState('mooring','6_LINES_SHALLOW')">6 Lines Shallow</button>
+            <button class="btn" onclick="setState('mooring','6_LINES_DEEP')">6 Lines Deep</button>
+            <button class="btn" onclick="setState('mooring','4_LINES_SHALLOW')">4 Lines Shallow</button>
+            <button class="btn" onclick="setState('mooring','4_LINES_DEEP')">4 Lines Deep</button>
+        </div>
+    </div>
+    <div class="row">
+        <div class="label">Skid Stage</div>
+        <div class="btn-grid">
+            <button class="btn active" onclick="setState('stage','START')">START</button>
+            <button class="btn" onclick="setState('stage','MID')">MID</button>
+            <button class="btn" onclick="setState('stage','END')">END</button>
+            <button class="btn" style="color:var(--danger);" onclick="setState('stage','OLB')">BROKEN</button>
+        </div>
+    </div>
+    <div class="row">
+        <div class="label">Spud Depth</div>
+        <div class="btn-grid">
+            <button class="btn active" onclick="setState('spud', 4)">4m</button>
+            <button class="btn" onclick="setState('spud', 7)">7m</button>
+            <button class="btn" onclick="setState('spud', 11)">11m</button>
+        </div>
+    </div>
+</div>
+
+<div class="dashboard">
+    <div class="card" style="border-left: 5px solid var(--wind);">
+        <label style="color:var(--wind)">Wind Sea Data</label>
+        <div class="input-grid">
+            <div class="input-group full"><label>DIR (°T)</label><input type="number" id="w-dir" value="90"></div>
+            <div class="input-group"><label>Hs (M)</label><input type="number" id="w-hs" value="0.5" step="0.1"></div>
+            <div class="input-group"><label>Tp (S)</label><input type="number" id="w-per" value="5.0" step="0.1"></div>
+        </div>
+        <div class="rel-box" style="color:var(--wind)">STERN REL: <span id="rel-w">0°</span></div>
+    </div>
+
+    <div class="plot-container" id="plot">
+        <div class="ticks"></div>
+        <div class="cardinal n">N</div><div class="cardinal e">E</div><div class="cardinal s">S</div><div class="cardinal w">W</div>
+        
+        <div class="track" id="tr-h"><div class="hdg-grab" id="gr-h"></div></div>
+        <div class="track" id="tr-w"><div class="weather-handle" id="gr-w" style="color: var(--wind)"><span class="marker-label">Sea</span><div class="arrow-down"></div></div></div>
+        <div class="track" id="tr-s"><div class="weather-handle" id="gr-s" style="color: var(--swell)"><span class="marker-label">Swell</span><div class="arrow-down"></div></div></div>
+        
+        <div id="v-group"><div class="barge-hull"><div id="v-hdg" style="font-weight:900;color:white;">000°</div></div></div>
+    </div>
+
+    <div class="card" style="border-right: 5px solid var(--swell);">
+        <label style="color:var(--swell)">Primary Swell Data</label>
+        <div class="input-grid">
+            <div class="input-group full"><label>DIR (°T)</label><input type="number" id="s-dir" value="270"></div>
+            <div class="input-group"><label>Hs (M)</label><input type="number" id="s-hs" value="0.5" step="0.1"></div>
+            <div class="input-group"><label>Ts (S)</label><input type="number" id="s-per" value="5.0" step="0.1"></div>
+        </div>
+        <div class="rel-box" style="color:var(--swell)">STERN REL: <span id="rel-s">0°</span></div>
+    </div>
+</div>
+
+<div class="footer">
+    <label style="font-weight: 800; color: #64748b; font-size: 0.75rem; letter-spacing: 1px;">VESSEL GYRO HEADING (°T)</label>
+    <input type="number" id="in-h" value="0">
+    <button class="ref-sheet-btn" onclick="toggleModal(true)">Open Reference Sheet</button>
+</div>
+
+<div id="modal" class="modal">
+    <div id="modal-content"></div>
+    <button onclick="toggleModal(false)" style="margin-top:30px; padding:20px; width:100%; background:var(--danger); border:none; color:white; font-weight:900; border-radius: 8px;">CLOSE</button>
+</div>
+
+<div id="kbd-done" style="display:none; position:fixed; bottom:20px; right:20px; z-index:5000; background:var(--vessel); color:white; padding:15px 25px; border-radius:50px; font-weight:900; box-shadow:0 10px 20px rgba(0,0,0,0.5);" onclick="document.activeElement.blur()">DONE</div>
+
+<script>
+    // --- DATA BLOCK RE-MAPPED FOR SAFETY ---
+
+  const ORCA_DATA = {
+    "6_LINES_SHALLOW": {
+        "START": {
+            // Format: Tp: [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]
+            2: [1.25, 1.50, 1.25, 1.25, 1.25, 1.50, 1.50, 1.50, 1.25, 1.25, 1.25, 1.50],
+            3: [1.25, 1.50, 1.25, 1.25, 1.25, 1.50, 1.50, 1.50, 1.25, 1.25, 1.25, 1.50],
+            4: [1.25, 1.50, 1.25, 1.25, 1.25, 1.50, 1.50, 1.50, 1.25, 1.25, 1.25, 1.50],
+            5: [1.50, 1.50, 1.25, 1.25, 1.25, 1.50, 1.50, 1.50, 1.25, 1.25, 1.25, 1.50],
+            6: [1.50, 1.50, 1.25, 1.25, 1.25, 1.50, 1.50, 1.50, 1.25, 1.25, 1.25, 1.50],
+            7: [1.50, 1.50, 1.25, 1.25, 1.25, 1.50, 1.50, 1.50, 1.25, 1.25, 1.25, 1.50],
+            8: [1.25, 1.25, 1.25, 1.00, 1.25, 1.25, 1.25, 1.25, 1.00, 1.00, 1.00, 1.25],
+            9: [1.25, 1.25, 1.00, 1.00, 1.00, 1.25, 1.25, 1.25, 1.00, 1.00, 1.00, 1.25]
+        },
+        "MID": {
+            2: [1.75, 1.50, 1.25, 1.25, 1.25, 1.75, 1.75, 1.75, 1.50, 1.25, 1.25, 1.50],
+            3: [1.75, 1.50, 1.25, 1.25, 1.25, 1.75, 1.75, 1.75, 1.50, 1.25, 1.25, 1.50],
+            4: [1.75, 1.50, 1.25, 1.25, 1.25, 1.75, 1.75, 1.75, 1.50, 1.25, 1.25, 1.50],
+            5: [1.75, 1.50, 1.50, 1.50, 1.25, 1.75, 1.75, 1.75, 1.50, 1.25, 1.25, 1.50],
+            6: [1.75, 1.50, 1.50, 1.50, 1.50, 1.75, 1.75, 1.50, 1.50, 1.25, 1.25, 1.50],
+            7: [1.75, 1.50, 1.25, 1.25, 1.50, 1.75, 1.75, 1.75, 1.50, 1.25, 1.25, 1.50],
+            8: [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.75, 1.25, 1.25, 1.25, 1.25, 1.25],
+            9: [1.25, 1.25, 1.00, 1.00, 1.25, 1.25, 1.75, 1.25, 1.25, 1.25, 1.00, 1.00]
+        },
+        "END": {
+            2: [1.75, 1.50, 1.25, 1.25, 1.00, 1.75, 1.75, 1.75, 1.00, 1.25, 1.25, 1.50],
+            3: [1.75, 1.50, 1.25, 1.25, 1.00, 1.75, 1.75, 1.75, 1.00, 1.25, 1.25, 1.50],
+            4: [1.75, 1.50, 1.25, 1.25, 1.00, 1.75, 1.75, 1.75, 1.00, 1.25, 1.25, 1.50],
+            5: [1.75, 1.50, 1.25, 1.25, 1.50, 1.75, 1.75, 1.75, 1.50, 1.25, 1.25, 1.50],
+            6: [1.75, 1.50, 1.25, 1.25, 1.50, 1.75, 1.75, 1.75, 1.50, 1.25, 1.25, 1.50],
+            7: [1.75, 1.50, 1.25, 1.25, 1.50, 1.75, 1.75, 1.75, 1.50, 1.25, 1.25, 1.50],
+            8: [1.75, 1.25, 1.25, 1.25, 1.25, 1.25, 1.75, 1.25, 1.25, 1.25, 1.25, 1.25],
+            9: [1.25, 1.25, 1.25, 1.25, 1.00, 1.25, 1.25, 1.25, 1.00, 1.25, 1.25, 1.25]
+        },
+        "OLB": {
+            2: [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.00, 1.00, 1.25],
+            3: [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.00, 1.00, 1.25],
+            4: [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.00, 1.00, 1.25],
+            5: [1.50, 1.50, 1.25, 1.25, 1.25, 1.50, 1.50, 1.50, 1.25, 1.00, 1.25, 1.50],
+            6: [1.50, 1.50, 1.25, 1.25, 1.25, 1.50, 1.50, 1.50, 1.00, 1.00, 1.25, 1.50],
+            7: [1.50, 1.50, 1.25, 1.25, 1.25, 1.50, 1.50, 1.25, 1.00, 1.00, 1.00, 1.50],
+            8: [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.00, 1.00, 1.00, 1.25],
+            9: [1.25, 1.25, 1.00, 1.00, 1.25, 1.25, 1.25, 1.25, 1.00, 1.00, 1.00, 1.25]
+        }
+    }
+};
+
+const ORCA_DATA_DEEP = {
+    "6_LINES_DEEP": {
+        "START": {
+            // Headings: [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]
+            2: [1.50, 1.50, 1.50, 1.50, 1.50, 1.50, 1.75, 1.50, 1.50, 1.50, 2.00, 1.50],
+            3: [1.50, 1.50, 1.50, 1.50, 1.50, 1.50, 1.75, 1.50, 1.50, 1.50, 2.00, 1.50],
+            4: [1.50, 1.50, 1.50, 1.50, 1.50, 1.50, 1.75, 1.50, 1.50, 1.50, 2.00, 1.50],
+            5: [1.50, 1.50, 1.50, 1.50, 1.50, 1.50, 1.75, 1.50, 1.50, 1.50, 2.00, 1.50],
+            6: [2.00, 2.00, 2.00, 1.50, 2.00, 2.25, 2.25, 2.00, 1.75, 1.50, 2.00, 2.25],
+            7: [2.75, 2.25, 2.00, 2.00, 2.00, 2.25, 3.00, 2.25, 2.00, 1.75, 2.00, 2.25],
+            8: [2.75, 2.00, 2.25, 2.00, 2.00, 2.25, 3.00, 2.25, 2.00, 1.75, 2.00, 2.25],
+            9: [2.75, 2.25, 2.25, 2.00, 2.00, 2.25, 3.00, 2.25, 2.00, 1.75, 2.00, 2.25]
+        },
+        "MID": {
+            2: [1.50, 1.75, 1.75, 1.50, 1.50, 1.75, 1.75, 1.75, 1.75, 1.75, 1.50, 1.75],
+            3: [1.50, 1.75, 1.75, 1.50, 1.50, 1.75, 1.75, 1.75, 1.75, 1.75, 1.50, 1.75],
+            4: [1.50, 1.75, 1.75, 1.50, 1.50, 1.75, 1.75, 1.75, 1.75, 1.75, 1.50, 1.75],
+            5: [1.50, 1.75, 1.75, 1.50, 1.50, 1.75, 1.75, 1.75, 1.75, 1.75, 1.50, 1.75],
+            6: [2.25, 2.00, 2.00, 2.25, 2.25, 2.25, 2.25, 2.00, 1.75, 2.25, 2.25, 2.00],
+            7: [3.00, 3.00, 2.00, 2.25, 2.25, 3.00, 3.00, 2.00, 2.25, 2.25, 2.25, 3.00],
+            8: [3.00, 3.00, 2.00, 2.25, 2.25, 3.00, 3.00, 3.00, 2.25, 2.00, 2.25, 3.00],
+            9: [3.00, 3.00, 2.25, 2.00, 2.25, 3.00, 3.00, 3.00, 2.25, 2.25, 2.25, 3.00]
+        },
+        "END": {
+            2: [1.75, 1.50, 1.50, 1.50, 1.75, 1.75, 1.75, 1.75, 1.75, 1.75, 1.50, 1.75],
+            3: [1.75, 1.50, 1.50, 1.50, 1.75, 1.75, 1.75, 1.75, 1.75, 1.75, 1.50, 1.75],
+            4: [1.75, 1.50, 1.50, 1.50, 1.75, 1.75, 1.75, 1.75, 1.75, 1.75, 1.50, 1.75],
+            5: [1.75, 1.50, 1.50, 1.50, 1.75, 1.75, 1.75, 1.75, 1.75, 1.75, 1.50, 1.75],
+            6: [2.25, 2.25, 2.00, 2.00, 2.25, 2.25, 2.00, 2.00, 2.25, 2.00, 2.00, 2.25],
+            7: [3.00, 3.00, 2.25, 1.75, 2.25, 3.00, 3.00, 3.00, 2.25, 2.00, 2.00, 3.00],
+            8: [3.00, 3.00, 2.00, 2.00, 2.25, 3.00, 3.00, 3.00, 2.25, 2.25, 2.00, 3.00],
+            9: [3.00, 3.00, 2.00, 1.75, 2.25, 3.00, 3.00, 3.00, 2.25, 2.00, 2.00, 3.00]
+        },
+        "OLB": {
+            2: [2.25, 2.25, 1.75, 1.25, 1.75, 2.25, 3.00, 2.00, 1.25, 1.25, 1.25, 2.25],
+            3: [2.25, 2.25, 1.75, 1.25, 1.75, 2.25, 3.00, 2.00, 1.25, 1.25, 1.25, 2.25],
+            4: [2.25, 2.25, 1.75, 1.25, 1.75, 2.25, 3.00, 2.00, 1.25, 1.25, 1.25, 2.25],
+            5: [2.25, 2.25, 1.75, 1.50, 1.75, 2.25, 3.00, 2.00, 1.25, 1.25, 1.25, 2.25],
+            6: [2.25, 2.25, 2.00, 1.50, 2.00, 2.25, 3.00, 2.00, 1.50, 1.25, 1.25, 2.25],
+            7: [2.75, 2.25, 2.00, 1.50, 2.00, 2.25, 3.00, 2.25, 1.75, 1.50, 1.75, 2.25],
+            8: [2.75, 2.25, 2.00, 1.25, 2.00, 2.25, 3.00, 2.25, 2.00, 1.25, 2.00, 2.25],
+            9: [2.75, 2.25, 2.00, 1.25, 2.00, 2.25, 3.00, 2.25, 2.00, 1.25, 2.00, 2.25]
+        }
+    }
+};
+
+const ORCA_DATA_4L_SHALLOW = {
+    "4_LINES_SHALLOW": {
+        "START": {
+            // Headings: [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]
+            2: [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25],
+            3: [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25],
+            4: [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25],
+            5: [1.75, 1.50, 1.25, 1.25, 1.25, 1.50, 1.75, 1.50, 1.25, 1.25, 1.25, 1.50],
+            6: [1.75, 1.50, 1.25, 1.25, 1.25, 1.50, 1.75, 1.50, 1.25, 1.25, 1.25, 1.50],
+            7: [1.75, 1.50, 1.25, 1.25, 1.25, 1.50, 1.75, 1.50, 1.25, 1.00, 1.00, 1.50],
+            8: [1.25, 1.25, 1.00, 1.00, 1.25, 1.25, 1.75, 1.25, 1.00, 1.00, 1.00, 1.25],
+            9: [1.25, 1.25, 1.00, 1.00, 1.00, 1.25, 1.25, 1.25, 1.00, 1.00, 1.00, 1.00]
+        },
+        "MID": {
+            2: [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25],
+            3: [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25],
+            4: [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25],
+            5: [1.75, 1.50, 1.25, 1.25, 1.50, 1.50, 1.75, 1.50, 1.25, 1.25, 1.25, 1.50],
+            6: [1.75, 1.50, 1.25, 1.25, 1.25, 1.50, 1.75, 1.50, 1.25, 1.25, 1.25, 1.50],
+            7: [1.75, 1.50, 1.25, 1.25, 1.25, 1.50, 1.75, 1.50, 1.25, 1.25, 1.25, 1.50],
+            8: [1.25, 1.25, 1.00, 1.00, 1.00, 1.25, 1.75, 1.25, 1.00, 1.00, 1.00, 1.25],
+            9: [1.25, 1.00, 1.00, 1.00, 1.00, 1.25, 1.25, 1.25, 1.00, 1.00, 1.00, 1.00]
+        },
+        "END": {
+            2: [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25],
+            3: [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25],
+            4: [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25],
+            5: [1.75, 1.50, 1.25, 1.25, 1.50, 1.50, 1.75, 1.50, 1.50, 1.25, 1.25, 1.50],
+            6: [1.75, 1.50, 1.25, 1.25, 1.50, 1.50, 1.75, 1.50, 1.50, 1.25, 1.25, 1.50],
+            7: [1.75, 1.50, 1.25, 1.25, 1.25, 1.50, 1.75, 1.50, 1.25, 1.25, 1.25, 1.50],
+            8: [1.25, 1.25, 1.00, 1.25, 1.00, 1.25, 1.75, 1.25, 1.00, 1.00, 1.00, 1.25],
+            9: [1.25, 1.25, 1.00, 1.00, 1.00, 1.25, 1.25, 1.25, 1.00, 1.00, 1.00, 1.25]
+        },
+        "OLB": {
+            2: [1.25, 1.25, 1.00, 1.00, 1.25, 1.25, 1.25, 1.25, 1.25, 0.75, 0.75, 1.25],
+            3: [1.25, 1.25, 1.00, 1.00, 1.25, 1.25, 1.25, 1.25, 1.25, 0.75, 0.75, 1.25],
+            4: [1.25, 1.25, 1.00, 1.00, 1.25, 1.25, 1.25, 1.25, 1.25, 1.00, 1.00, 1.25],
+            5: [1.50, 1.25, 1.00, 1.00, 1.25, 1.50, 1.50, 1.50, 1.25, 1.00, 1.00, 1.25],
+            6: [1.50, 1.25, 1.00, 1.00, 1.25, 1.50, 1.50, 1.50, 1.25, 1.00, 1.00, 1.25],
+            7: [1.50, 1.00, 1.00, 1.00, 1.00, 1.50, 1.50, 1.50, 1.25, 1.00, 1.00, 1.25],
+            8: [1.25, 1.00, 1.00, 1.00, 1.00, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25],
+            9: [1.25, 1.00, 1.00, 1.00, 1.00, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25]
+        }
+    }
+};
+
+const ORCA_DATA_4L_DEEP = {
+    "4_LINES_DEEP": {
+        "START": {
+            // Headings: [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]
+            2: [1.75, 1.75, 1.75, 1.50, 1.50, 1.75, 1.75, 1.75, 1.50, 1.00, 1.25, 1.75],
+            3: [1.75, 1.75, 1.75, 1.50, 1.50, 1.75, 1.75, 1.75, 1.50, 1.00, 1.25, 1.75],
+            4: [1.75, 1.75, 1.75, 1.50, 1.50, 1.75, 1.75, 1.75, 1.50, 1.00, 1.25, 1.75],
+            5: [1.75, 1.75, 1.75, 1.50, 1.50, 1.75, 1.75, 1.75, 1.50, 1.00, 1.25, 1.75],
+            6: [2.50, 2.25, 2.00, 1.75, 2.00, 2.50, 2.50, 2.25, 1.75, 1.25, 1.50, 2.50],
+            7: [2.50, 2.50, 2.00, 1.75, 2.25, 2.50, 2.50, 2.50, 2.00, 1.50, 1.50, 2.50],
+            8: [2.50, 2.50, 2.25, 2.00, 2.25, 2.50, 2.50, 2.50, 2.00, 1.50, 1.75, 2.50],
+            9: [2.50, 2.50, 2.25, 2.00, 2.50, 2.50, 2.50, 2.50, 2.25, 1.75, 1.75, 2.50]
+        },
+        "MID": {
+            2: [1.75, 1.75, 1.75, 1.50, 1.75, 1.75, 1.75, 1.75, 1.75, 1.50, 1.75, 1.75],
+            3: [1.75, 1.75, 1.75, 1.50, 1.75, 1.75, 1.75, 1.75, 1.75, 1.50, 1.75, 1.75],
+            4: [1.75, 1.75, 1.75, 1.50, 1.75, 1.75, 1.75, 1.75, 1.75, 1.50, 1.75, 1.75],
+            5: [1.75, 1.75, 1.75, 1.50, 1.75, 1.75, 1.75, 1.75, 1.75, 1.50, 1.75, 1.75],
+            6: [2.50, 2.25, 1.75, 2.00, 2.00, 2.50, 2.50, 2.25, 1.75, 1.75, 2.00, 2.50],
+            7: [2.50, 2.50, 2.00, 2.25, 2.25, 2.50, 2.50, 2.50, 2.00, 2.25, 2.25, 2.50],
+            8: [2.50, 2.50, 2.25, 2.50, 2.50, 2.50, 2.50, 2.50, 2.25, 2.25, 2.25, 2.50],
+            9: [2.50, 2.50, 2.50, 2.50, 2.50, 2.50, 2.50, 2.50, 2.50, 2.50, 2.50, 2.50]
+        },
+        "END": {
+            2: [1.75, 1.75, 1.50, 1.25, 1.50, 1.75, 1.75, 1.75, 1.75, 1.50, 1.50, 1.75],
+            3: [1.75, 1.75, 1.50, 1.25, 1.50, 1.75, 1.75, 1.75, 1.75, 1.50, 1.50, 1.75],
+            4: [1.75, 1.75, 1.50, 1.25, 1.50, 1.75, 1.75, 1.75, 1.75, 1.50, 1.50, 1.75],
+            5: [1.75, 1.75, 1.50, 1.25, 1.50, 1.75, 1.75, 1.75, 1.75, 1.50, 1.50, 1.75],
+            6: [2.50, 2.25, 1.75, 1.25, 1.75, 2.25, 2.50, 2.25, 1.75, 1.75, 2.00, 2.50],
+            7: [2.50, 2.50, 2.00, 1.50, 1.75, 2.50, 2.50, 2.50, 2.00, 1.75, 2.25, 2.50],
+            8: [2.50, 2.50, 2.25, 1.75, 2.00, 2.50, 2.50, 2.50, 2.25, 2.00, 2.25, 2.50],
+            9: [2.50, 2.50, 2.50, 2.00, 2.00, 2.50, 2.50, 2.50, 2.25, 2.00, 2.50, 2.50]
+        },
+        "OLB": {
+            2: [1.75, 1.25, 1.00, 1.00, 1.25, 2.00, 2.50, 2.25, 1.25, 1.25, 1.25, 2.50],
+            3: [1.75, 1.25, 1.00, 1.00, 1.25, 2.00, 2.50, 2.25, 1.25, 1.25, 1.25, 2.50],
+            4: [1.75, 1.25, 1.00, 1.00, 1.25, 2.00, 2.50, 2.25, 1.25, 1.25, 1.25, 2.50],
+            5: [1.75, 1.25, 1.00, 1.00, 1.50, 2.00, 2.50, 2.25, 1.50, 1.25, 1.25, 2.50],
+            6: [2.00, 1.50, 1.25, 1.25, 1.50, 2.50, 2.50, 2.25, 1.50, 1.25, 1.25, 2.50],
+            7: [2.25, 1.75, 1.50, 1.50, 1.50, 2.50, 2.50, 2.25, 1.50, 1.25, 1.25, 2.50],
+            8: [2.50, 2.00, 1.75, 1.25, 1.25, 2.50, 2.50, 2.25, 1.25, 1.25, 1.25, 2.50],
+            9: [2.50, 2.25, 2.00, 1.25, 1.25, 2.50, 2.50, 2.25, 1.25, 1.25, 1.25, 2.50]
+        }
+    }
+};
+const SPUD_LEG_LIMITS = {
+    "SHALLOW_WATER_LE_4M": {
+        // Headings: [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]
+        2: [2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00],
+        3: [2.00, 2.00, 2.00, 1.25, 2.00, 2.00, 2.00, 2.00, 2.00, 1.25, 2.00, 2.00],
+        4: [2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00],
+        5: [2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00],
+        6: [2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 1.25, 2.00, 2.00],
+        7: [2.00, 2.00, 2.00, 1.50, 2.00, 2.00, 2.00, 2.00, 2.00, 1.00, 2.00, 2.00],
+        8: [2.00, 2.00, 1.50, 1.50, 1.50, 2.00, 2.00, 2.00, 1.50, 1.00, 1.75, 2.00]
+    }
+};
+const SPUD_LEG_LIMITS_INTERMEDIATE = {
+    "INTERMEDIATE_WATER_LE_7M": {
+        // Headings: [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]
+        2: [2.00, 2.00, 2.00, 1.75, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00],
+        3: [2.00, 2.00, 2.00, 1.75, 2.00, 2.00, 2.00, 2.00, 2.00, 1.75, 2.00, 2.00],
+        4: [2.00, 2.00, 2.00, 1.50, 1.75, 2.00, 2.00, 2.00, 1.75, 1.50, 1.75, 2.00],
+        5: [2.00, 2.00, 1.00, 0.75, 1.50, 2.00, 2.00, 2.00, 0.75, 0.75, 1.50, 2.00],
+        6: [2.00, 1.50, 0.50, 0.50, 1.00, 1.25, 1.75, 1.25, 0.50, 0.50, 1.00, 1.25],
+        7: [1.50, 1.00, 0.25, 0.50, 0.75, 1.00, 1.50, 1.00, 0.25, 0.50, 1.00, 0.75],
+        8: [1.25, 0.75, 0.25, 0.50, 0.50, 1.00, 1.25, 0.75, 0.25, 0.50, 0.75, 0.75]
+    }
+};
+const SPUD_LEG_LIMITS_DEEP = {
+    "DEEP_WATER_LE_11M": {
+        // Headings: [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]
+        2: [2.00, 2.00, 2.00, 1.75, 2.00, 2.00, 2.00, 2.00, 1.75, 1.75, 2.00, 2.00],
+        3: [2.00, 2.00, 2.00, 1.75, 2.00, 2.00, 2.00, 2.00, 2.00, 1.75, 2.00, 2.00],
+        4: [2.00, 2.00, 1.75, 1.25, 1.75, 2.00, 2.00, 2.00, 1.75, 1.25, 1.75, 2.00],
+        5: [1.75, 1.25, 1.00, 0.75, 1.00, 1.25, 1.75, 1.50, 0.75, 0.75, 0.75, 1.50],
+        6: [0.75, 0.50, 0.50, 0.50, 0.50, 0.50, 0.75, 0.50, 0.25, 0.50, 0.25, 0.50],
+        7: [0.50, 0.25, 0.25, 0.50, 0.25, 0.25, 0.50, 0.25, 0.25, 0.50, 0.25, 0.25],
+        8: [0.50, 0.25, 0.25, 0.50, 0.25, 0.25, 0.50, 0.50, 0.25, 0.50, 0.25, 0.50]
+    }
+};
+
+    // (Ensure other data objects are declared similarly)
+
+    const ORCA_DATA_MASTER = {
+        "6_LINES_SHALLOW": (typeof ORCA_DATA !== 'undefined') ? ORCA_DATA["6_LINES_SHALLOW"] : null,
+        "6_LINES_DEEP": (typeof ORCA_DATA_DEEP !== 'undefined') ? ORCA_DATA_DEEP["6_LINES_DEEP"] : null,
+        "4_LINES_SHALLOW": (typeof ORCA_DATA_4L_SHALLOW !== 'undefined') ? ORCA_DATA_4L_SHALLOW["4_LINES_SHALLOW"] : null,
+        "4_LINES_DEEP": (typeof ORCA_DATA_4L_DEEP !== 'undefined') ? ORCA_DATA_4L_DEEP["4_LINES_DEEP"] : null
+    };
+
+    const SPUD_DATA = {
+        4: (typeof SPUD_LEG_LIMITS !== 'undefined') ? SPUD_LEG_LIMITS["SHALLOW_WATER_LE_4M"] : null,
+        7: (typeof SPUD_LEG_LIMITS_INTERMEDIATE !== 'undefined') ? SPUD_LEG_LIMITS_INTERMEDIATE["INTERMEDIATE_WATER_LE_7M"] : null,
+        11: (typeof SPUD_LEG_LIMITS_DEEP !== 'undefined') ? SPUD_LEG_LIMITS_DEEP["DEEP_WATER_LE_11M"] : null
+    };
+
+    let state = { mooring: '6_LINES_SHALLOW', stage: 'START', spud: 4, drag: null };
+
+    function setState(key, val) {
+        state[key] = val;
+        const btnRow = (key === 'mooring') ? 0 : (key === 'stage' ? 1 : 2);
+        document.querySelectorAll('.console .row')[btnRow].querySelectorAll('.btn').forEach(b => {
+            const cmd = b.getAttribute('onclick');
+            // Fixed literal matching for Desktop
+            b.classList.toggle('active', cmd.includes(`'${val}'`) || cmd.includes(`, ${val}`) || cmd.includes(`${val},`));
+        });
+        update();
+    }
+
+    function getInterpolatedLimit(dataset, angle, period) {
+        if (!dataset || Object.keys(dataset).length === 0) return null;
+        let p = Math.round(period);
+        if (p < 2) p = 2; if (p > 9) p = 9;
+        const row = dataset[p];
+        if (!row) return null;
+        const baseIdx = Math.floor(angle / 30) % 12;
+        const nextIdx = (baseIdx + 1) % 12;
+        const fraction = (angle % 30) / 30;
+        return row[baseIdx] + (row[nextIdx] - row[baseIdx]) * fraction;
+    }
+
+    function update() {
+        const h = parseInt(document.getElementById('in-h').value) || 0;
+        const wD = parseInt(document.getElementById('w-dir').value) || 0, sD = parseInt(document.getElementById('s-dir').value) || 0;
+        const wHs = parseFloat(document.getElementById('w-hs').value) || 0, wTp = parseFloat(document.getElementById('w-per').value) || 0;
+        const sHs = parseFloat(document.getElementById('s-hs').value) || 0, sTs = parseFloat(document.getElementById('s-per').value) || 0;
+
+        // Visuals - Fixed backticks
+        document.getElementById('v-group').style.transform = `rotate(${h}deg)`;
+        document.getElementById('tr-h').style.transform = `rotate(${h}deg)`;
+        document.getElementById('tr-w').style.transform = `rotate(${wD}deg)`;
+        document.getElementById('tr-s').style.transform = `rotate(${sD}deg)`;
+        document.getElementById('v-hdg').innerText = h.toString().padStart(3, '0') + "°";
+
+        let stern = (h + 180) % 360;
+        let rW = (stern - wD + 360) % 360, rS = (stern - sD + 360) % 360;
+        document.getElementById('rel-w').innerText = `${rW}°`;
+        document.getElementById('rel-s').innerText = `${rS}°`;
+
+        const vSet = (ORCA_DATA_MASTER[state.mooring] || {})[state.stage];
+        const sSet = SPUD_DATA[state.spud];
+        
+        const vLimSea = getInterpolatedLimit(vSet, rW, wTp);
+        const vLimSwell = getInterpolatedLimit(vSet, rS, sTs);
+        const spLimSea = getInterpolatedLimit(sSet, rW, wTp);
+        const spLimSwell = getInterpolatedLimit(sSet, rS, sTs);
+
+        processStatus('v-bar', 'MOORING', wHs, vLimSea, sHs, vLimSwell);
+        processStatus('s-bar', 'SPUD OPS', wHs, spLimSea, sHs, spLimSwell);
+    }
+
+    function processStatus(id, label, seaHs, seaLim, swellHs, swellLim) {
+        const el = document.getElementById(id);
+        if (seaLim === null || swellLim === null) {
+            el.innerText = `${label}: DATA MISSING`;
+            el.className = "status-bar bg-nodata";
+            return;
+        }
+
+        const seaRatio = seaHs / seaLim;
+        const swellRatio = swellHs / swellLim;
+        const maxRatio = Math.max(seaRatio, swellRatio);
+
+        let status = "bg-safe";
+        let text = `${label}: WITHIN LIMITS`;
+
+        if (maxRatio > 1.0) {
+            status = "bg-danger";
+            const breachVal = (seaRatio > swellRatio) ? seaLim : swellLim;
+            const breachType = (seaRatio > swellRatio) ? "SEA" : "SWELL";
+            text = `${label}: BREACH (${breachType} LIMIT: ${breachVal.toFixed(2)}M)`;
+        } else if (maxRatio > 0.9) {
+            status = "bg-warning";
+            text = `${label}: NEAR LIMITS`;
+        }
+
+        el.className = `status-bar ${status}`;
+        el.innerText = text;
+    }
+
+    function handleMove(e) {
+        if (!state.drag) return;
+        const r = document.getElementById('plot').getBoundingClientRect();
+        const cx = r.left + r.width/2, cy = r.top + r.height/2;
+        const mx = (e.touches ? e.touches[0].clientX : e.clientX), my = (e.touches ? e.touches[0].clientY : e.clientY);
+        let a = Math.round(Math.atan2(my-cy, mx-cx) * (180/Math.PI) + 90);
+        if (a < 0) a += 360;
+        if (state.drag === 'h') document.getElementById('in-h').value = a;
+        else if (state.drag === 'w') document.getElementById('w-dir').value = a;
+        else if (state.drag === 's') document.getElementById('s-dir').value = a;
+        update();
+    }
+
+    const dismissKeyboard = () => { if (document.activeElement && document.activeElement.tagName === 'INPUT') document.activeElement.blur(); };
+
+    document.querySelectorAll('input').forEach(input => {
+        input.addEventListener('keypress', (e) => { if (e.key === 'Enter') input.blur(); });
+        input.addEventListener('keyup', update);
+        input.addEventListener('change', update);
+    });
+
+    const startDrag = (e, type) => { dismissKeyboard(); state.drag = type; };
+
+    ['mousedown', 'touchstart'].forEach(evt => {
+        document.getElementById('gr-h').addEventListener(evt, (e) => startDrag(e, 'h'));
+        document.getElementById('gr-w').addEventListener(evt, (e) => startDrag(e, 'w'));
+        document.getElementById('gr-s').addEventListener(evt, (e) => startDrag(e, 's'));
+    });
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', () => state.drag = null);
+    window.addEventListener('touchmove', (e) => { if(state.drag) e.preventDefault(); handleMove(e); }, { passive: false });
+    window.addEventListener('touchend', () => state.drag = null);
+
+    function toggleModal(s) {
+        dismissKeyboard();
+        if(s) {
+            const vData = (ORCA_DATA_MASTER[state.mooring] || {})[state.stage];
+            const sData = SPUD_DATA[state.spud];
+            let h = `<h2>REFERENCE DATA</h2>`;
+            h += genTableHTML(vData, `${state.mooring} (${state.stage})`);
+            h += genTableHTML(sData, `SPUDS: ${state.spud}m Deployment`);
+            document.getElementById('modal-content').innerHTML = h;
+        }
+        document.getElementById('modal').style.display = s ? 'block' : 'none';
+    }
+
+    function genTableHTML(d, t) {
+        if(!d) return `<p>${t}: Data Block Missing</p>`;
+        let h = `<h4>${t}</h4><table class="ref-table"><tr><th>Tp/Hdg</th>`;
+        for(let deg=0; deg<360; deg+=30) h += `<th>${deg}</th>`;
+        h += `</tr>`;
+        for(let p=2; p<=9; p++) {
+            h += `<tr><td>${p}s</td>`;
+            if(d[p]) d[p].forEach(v => h += `<td>${v.toFixed(2)}</td>`);
+            else for(let i=0; i<12; i++) h += `<td>-</td>`;
+            h += `</tr>`;
+        }
+        return h + `</table>`;
+    }
+    
+    update();
+</script>
+</body>
+</html>
